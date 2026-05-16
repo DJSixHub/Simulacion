@@ -1,0 +1,83 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\geometry{margin=1in}
+\begin{document}
+\title{Simulacion: La Cocina de Kojo}
+\author{Diego Puentes Fernandez \\ Grupo: Ciencia de Datos CD-311}
+\date{\today}
+\maketitle
+
+\section*{Orden del problema}
+La Cocina de Kojo es un puesto de comida rapida que sirve sandwiches y sushi. El centro comercial abre entre las 10:00 y las 21:00. Hay dos periodos pico: 11:30--13:30 y 17:00--19:00. El tiempo de preparacion para sandwiches es uniforme entre 3 y 5 minutos; para sushi es uniforme entre 5 y 8 minutos. Se desea comparar la situacion actual (2 empleados) contra incorporar un tercer empleado durante horas pico. La medida de desempeno es el porcentaje de consumidores que esperan mas de 5 minutos.
+
+\section*{Supuestos y parametros}
+\begin{tabular}{ll}
+Duracion del dia: & 10:00--21:00 (660 minutos) \\ 
+Proceso de llegadas: & Proceso de Poisson por tramos (exponencial por tramos) \\ 
+Tasa fuera de pico: & 0.1 por minuto \\ 
+Tasa en pico: & 0.3 por minuto \\ 
+Prob. sandwich: & 0.6 \\ 
+Replicas por experimento: & 1000 \\ 
+\end{tabular}
+
+\section*{Principales ideas seguidas para la solución}
+La solución se implementó mediante una simulación de eventos discretos por tramos horarios. Las ideas principales son:
+- Usar una lista de eventos (cola de prioridad) que contiene eventos de cambio de dotación, llegadas y salidas.
+- Generar llegadas por tramos horarios con procesos de Poisson (intervalos exponenciales) para reflejar periodos pico y fuera de pico.
+- Mantener una única cola FIFO para todos los clientes; cuando un servidor queda libre toma el siguiente cliente en cola.
+- Implementar el tercer empleado sólo durante los tramos pico; si debe retirarse mientras atiende, termina su servicio y después abandona la planta.
+
+\section*{Ideas principales y modelo}
+La implementación concreta del modelo de eventos discretos se detalla a continuación.
+
+\subsection*{Generación de llegadas y tiempos de servicio}
+Las llegadas se generan con interarribos exponenciales (Poisson en el tiempo) por tramos horarios:
+- Fuera de pico (0:00--11:30, 13:30--17:00, 19:00--21:00): tasa $\lambda_{off}=0.1$ llegadas/minuto.
+- Pico (11:30--13:30 y 17:00--19:00): tasa $\lambda_{peak}=0.3$ llegadas/minuto.
+
+Justificación: el enunciado indica periodos de pico; modelarlos con tasas distintas por tramos es más realista y permite analizar el efecto del refuerzo de personal. Si se requiere una tasa homogénea, basta con usar el mismo $\lambda$ para todo el día.
+
+Los tiempos de servicio se generan de forma independiente según el producto:
+- Sándwich: distribución uniforme $U(3,5)$ minutos.
+- Sushi: distribución uniforme $U(5,8)$ minutos.
+
+\subsection*{Disciplina de cola}
+Hay una sola cola para todos los empleados; la disciplina es FIFO (primero en entrar, primero en salir). Los clientes que llegan y no encuentran servidor quedan en la cola hasta ser atendidos.
+
+\subsection*{Asignación de servidores}
+Cuando aparece un servidor libre (por final de servicio o por incorporación de plantilla en un cambio de dotación), se asigna inmediatamente el siguiente cliente en la cola (si existe). La selección del servidor entre varios libres se realiza por orden fijo (primer servidor disponible en la lista interna), lo que no afecta a la validez estadística del modelo bajo la suposición de servidores indistinguibles.
+
+\subsection*{Manejo del tercer empleado}
+En el escenario alternativo, un tercer empleado se incorpora al inicio de cada periodo pico y se retira al final del mismo. Si el tercer empleado está atendiendo cuando termina el periodo pico, se marca para retiro: no se le asignan nuevos clientes y, tras completar el servicio en curso, sale. Esto evita cortar servicios a mitad.
+
+\subsection*{Ciclo de eventos y actualización del reloj}
+La simulación mantiene una lista de eventos implementada con una cola de prioridad (heap). Cada evento es una tupla que contiene el tiempo del evento, una prioridad para romper empates (se procesan primero los cambios de dotación, luego salidas, luego llegadas) y el contenido del evento. El bucle principal extrae el siguiente evento por tiempo, actualiza el reloj de simulación al tiempo del evento y ejecuta la lógica asociada (generar nuevo evento de salida al iniciar un servicio, actualizar colas, cambiar la dotación de personal, etc.).
+
+\subsection*{Clientes promedio por día}
+Con las tasas usadas, la esperanza analítica del número de clientes por día es
+$$E[N]=\lambda_{off}\cdot 420 + \lambda_{peak}\cdot 240 = 0.1\cdot420 + 0.3\cdot240 \approx 114$$
+es decir, aproximadamente 114 clientes por jornada (de los cuales en media $0.6\times114\approx68.4$ pedirían sándwich y $45.6$ sushi).
+
+\subsection*{Réplicas y precisión de Monte Carlo}
+Se ejecutaron $1000$ réplicas independientes para cada escenario. Los intervalos de confianza al 95\% (IC95) resultantes son estrechos en valor absoluto para la métrica solicitada (porcentaje de clientes que esperan más de 5 minutos): en el escenario de 2 empleados el IC95 es $\pm0.597$ puntos porcentuales; en el de 3 empleados en picos es $\pm0.115$. Esto indica que el número de réplicas es suficiente para estimar la media con precisión absoluta moderada; si se quisiera reducir aún más la incertidumbre, bastaría aumentar el número de réplicas (la mitad del ancho del IC decrece aproximadamente con $\sqrt{n}$).
+
+\section*{Resultados}
+\begin{tabular}{lrr}
+\toprule
+Escenario & Porcentaje medio (\%) & IC95 \\ 
+\midrule
+Dos empleados & 14.363 & $\pm$ 0.597 \\ 
+Tres empleados en picos & 0.986 & $\pm$ 0.115 \\ 
+\bottomrule
+\end{tabular}
+
+\section*{Consideraciones}
+Los parametros de llegada y la probabilidad de pedido por tipo son supuestos (ver seccion Supuestos). Los resultados son estimaciones Monte Carlo; variaciones en las tasas o en la mezcla de productos cambiaran el resultado.
+
+\section*{Enlace al repositorio}
+\url{https://github.com/DJSixHub/Simulacion}
+
+\end{document}
